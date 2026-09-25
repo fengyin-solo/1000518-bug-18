@@ -10,6 +10,15 @@ REQUIRED_FIELDS = ["报警编号", "报警类型", "报警等级"]
 STATUS_ORDER = ["待确认", "已确认", "已处置", "已忽略"]
 ACTION_RULES = {"确认报警": "已确认", "处置报警": "已处置", "忽略报警": "已忽略"}
 NEGATIVE_ACTIONS = ["忽略报警"]
+PENDING_STATUS = STATUS_ORDER[0]
+
+
+def is_pending_confirmation(row: dict[str, Any]) -> bool:
+    """待确认口径：只有仍停留在「待确认」状态的报警才算。
+
+    确认、处置、忽略之后一律退出待确认口径；已忽略的报警不得再计入。
+    """
+    return row.get("status") == PENDING_STATUS
 
 
 class AlarmService:
@@ -40,8 +49,9 @@ class AlarmService:
         rows = store.rows(MODULE)
         entry = {"id": max((int(row.get("id", 0)) for row in rows), default=0) + 1}
         entry.update({field: values.get(field) for field in REQUIRED_FIELDS})
-        entry["status"] = STATUS_ORDER[0]
-        entry["pending"] = True
+        entry["status"] = PENDING_STATUS
+        entry["报警状态"] = PENDING_STATUS
+        entry["pending"] = is_pending_confirmation(entry)
         entry["abnormal"] = False
         rows.append(entry)
         return entry, []
@@ -56,6 +66,7 @@ class AlarmService:
         if target not in STATUS_ORDER:
             return None, f"目标状态「{target}」不在允许的状态序列里"
         entry["status"] = target
-        entry["pending"] = target != STATUS_ORDER[-1]
+        entry["报警状态"] = target
+        entry["pending"] = is_pending_confirmation(entry)
         entry["abnormal"] = action in NEGATIVE_ACTIONS
         return entry, f"报警事件已{action}"

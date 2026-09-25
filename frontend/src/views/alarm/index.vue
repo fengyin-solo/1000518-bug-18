@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
 
@@ -73,13 +73,38 @@ const ENDPOINT = '/api/alarm'
 const columns = ["报警编号", "报警类型", "报警等级", "触发设备", "触发时间", "确认人员", "处置说明", "报警状态"]
 const actions = ["确认报警", "处置报警", "忽略报警"]
 const statuses = ["待确认", "已确认", "已处置", "已忽略"]
-const stats = [{"label": "今日报警", "value": 0}, {"label": "待确认报警", "value": 0}, {"label": "高等级报警", "value": 0}]
+const HIGH_LEVELS = ["高", "一级", "紧急"]
 
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+
+function cellText(row: Row, key: string): string {
+  return String(row[key] ?? '').trim()
+}
+
+function isUnconfirmed(row: Row): boolean {
+  return row.status === statuses[0]
+}
+
+function isUnassigned(row: Row): boolean {
+  // 确认人员为空的待确认报警单独标出，不占待确认名额
+  return isUnconfirmed(row) && !cellText(row, '确认人员')
+}
+
+// 概览卡片与当前列表同源实时重算：确认、处置、忽略后随列表一起刷新，不来回跳
+const stats = computed(() => {
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return [
+    { label: '今日报警', value: rows.value.filter((row) => cellText(row, '触发时间').startsWith(today)).length },
+    { label: '待确认报警', value: rows.value.filter((row) => isUnconfirmed(row) && !isUnassigned(row)).length },
+    { label: '待指派确认人', value: rows.value.filter(isUnassigned).length },
+    { label: '高等级报警', value: rows.value.filter((row) => HIGH_LEVELS.some((level) => cellText(row, '报警等级').includes(level))).length },
+  ]
+})
 
 function resetFilters() {
   filters.value = {}
