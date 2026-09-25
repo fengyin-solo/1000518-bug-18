@@ -36,7 +36,10 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in columns" :key="column">
+            <span v-if="column === '确认人员' && !hasConfirmer(row)" class="tag-warn">未指派</span>
+            <template v-else>{{ row[column] ?? '—' }}</template>
+          </td>
           <td class="row-actions">
             <button
               v-for="action in actions"
@@ -68,12 +71,24 @@ import { onMounted, ref } from 'vue'
 import { request } from '@/api/client'
 
 type Row = Record<string, string | number | null>
+type Summary = {
+  today?: number
+  pending_confirm?: number
+  missing_confirmer?: number
+  high_level?: number
+}
 
 const ENDPOINT = '/api/alarm'
 const columns = ["报警编号", "报警类型", "报警等级", "触发设备", "触发时间", "确认人员", "处置说明", "报警状态"]
 const actions = ["确认报警", "处置报警", "忽略报警"]
 const statuses = ["待确认", "已确认", "已处置", "已忽略"]
-const stats = [{"label": "今日报警", "value": 0}, {"label": "待确认报警", "value": 0}, {"label": "高等级报警", "value": 0}]
+
+const stats = ref([
+  { label: '今日报警', value: 0 },
+  { label: '待确认报警', value: 0 },
+  { label: '高等级报警', value: 0 },
+  { label: '确认人缺失', value: 0 },
+])
 
 const rows = ref<Row[]>([])
 const total = ref(0)
@@ -110,6 +125,26 @@ async function runAction(action: string, row: Row) {
   }
 }
 
+function hasConfirmer(row: Row) {
+  return String(row['确认人员'] ?? '').trim().length > 0
+}
+
+function applySummary(summary: Summary | undefined) {
+  // 卡片口径以后端 summary 为准：它和列表、详情用的是同一份过滤结果，
+  // 确认、处置、忽略之后随 reload 一起刷新，数字不会来回跳。
+  const source: Summary = summary ?? {
+    pending_confirm: rows.value.filter((row) => row['报警状态'] === '待确认' && hasConfirmer(row)).length,
+    missing_confirmer: rows.value.filter((row) => row['报警状态'] === '待确认' && !hasConfirmer(row)).length,
+    high_level: rows.value.filter((row) => ['高', '一级', '1级', 'I级', 'Ⅰ级', '紧急'].includes(String(row['报警等级'] ?? '').trim())).length,
+  }
+  stats.value = [
+    { label: '今日报警', value: source.today ?? 0 },
+    { label: '待确认报警', value: source.pending_confirm ?? 0 },
+    { label: '高等级报警', value: source.high_level ?? 0 },
+    { label: '确认人缺失', value: source.missing_confirmer ?? 0 },
+  ]
+}
+
 async function reload() {
   errorMessage.value = ''
   const query = new URLSearchParams(filters.value as Record<string, string>).toString()
@@ -121,6 +156,7 @@ async function reload() {
     const payload = await response.json()
     rows.value = payload.items ?? []
     total.value = payload.total ?? rows.value.length
+    applySummary(payload.summary)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '监测报警列表读取失败'
   }
@@ -128,3 +164,14 @@ async function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.tag-warn {
+  color: #b42318;
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+}
+</style>

@@ -26,8 +26,8 @@ def list_entries(
     """按报警编号与状态过滤监测报警列表；没有数据时返回空页，不报错。"""
     if size > 200:
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
-    items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
-    return PageResult(items=items, total=total, page=page, size=size)
+    items, total, summary = service.list_entries(keyword=keyword, status=status, page=page, size=size)
+    return PageResult(items=items, total=total, page=page, size=size, summary=summary)
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -61,5 +61,5 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
 @router.get("/export")
 def export_entries() -> dict[str, Any]:
     """导出监测报警清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
+    items, total, _summary = service.list_entries(page=1, size=10000)
     return {"module": "alarm", "total": total, "items": items}
